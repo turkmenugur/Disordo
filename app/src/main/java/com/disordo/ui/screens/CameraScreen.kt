@@ -15,19 +15,25 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.view.CameraController
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,6 +49,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.disordo.DisordoApplication
+import com.disordo.ui.theme.disordo_coral_light
+import com.disordo.ui.theme.disordo_mint_light
 import com.disordo.util.ManageCameraPermission
 import com.disordo.viewmodel.CameraViewModel
 import com.disordo.viewmodel.ViewModelFactory
@@ -74,8 +82,43 @@ fun CameraScreen() {
     if (hasPermission) {
         CameraPreview(cameraViewModel, onGalleryClick = { galleryLauncher.launch("image/*") })
     } else {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Kamera izni gerekli.")
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                ),
+                shape = MaterialTheme.shapes.large
+            ) {
+                Column(
+                    modifier = Modifier.padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhotoCamera,
+                        contentDescription = "Kamera İkonu",
+                        modifier = Modifier.padding(bottom = 16.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Kamera İzni Gerekli",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Text(
+                        text = "Fotoğraf çekmek için kamera iznine ihtiyacımız var. Lütfen ayarlardan izin verin.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
         }
     }
 }
@@ -104,34 +147,52 @@ private fun CameraPreview(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp, start = 16.dp, end = 16.dp),
+                .padding(bottom = 48.dp, start = 24.dp, end = 24.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onGalleryClick) {
+            // Galeri butonu
+            IconButton(
+                onClick = onGalleryClick,
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = CircleShape
+                    )
+            ) {
                 Icon(
                     Icons.Default.PhotoLibrary, 
                     contentDescription = "Galeriyi Aç",
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(28.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
             
+            // Ana fotoğraf çekme butonu
             IconButton(
                 onClick = { 
                     capturePhoto(context, cameraController) { bitmap ->
                         cameraViewModel.saveCapturedImage(bitmap)
                     }
                 },
-                modifier = Modifier.size(72.dp)
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = CircleShape
+                    )
             ) {
                 Icon(
                     Icons.Default.PhotoCamera, 
                     contentDescription = "Fotoğraf Çek",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.size(40.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
 
-            Spacer(modifier = Modifier.size(36.dp))
+            // Boş alan (simetri için)
+            Spacer(modifier = Modifier.size(56.dp))
         }
     }
 }

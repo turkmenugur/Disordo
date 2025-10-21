@@ -15,12 +15,19 @@ import com.disordo.ui.screens.SettingsScreen
 @Composable
 fun AppNavigation(navController: NavHostController, paddingValues: PaddingValues) {
     NavHost(
-        navController = navController, 
+        navController = navController,
         startDestination = Screen.Home.route,
         modifier = Modifier.padding(paddingValues)
     ) {
         composable(Screen.Home.route) {
-            HomeScreen()
+            HomeScreen(
+                onNavigateToCamera = {
+                    navController.navigate(Screen.Camera.route)
+                },
+                onNavigateToGallery = {
+                    navController.navigate(Screen.Camera.route)
+                }
+            )
         }
         composable(Screen.Camera.route) {
             CameraScreen()

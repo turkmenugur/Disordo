@@ -28,6 +28,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.disordo.DisordoApplication
 import com.disordo.ui.components.GoogleSignInButton
+import com.disordo.ui.theme.disordo_peach_light
+import com.disordo.ui.theme.disordo_mint_light
 import com.disordo.viewmodel.AuthViewModel
 import com.disordo.viewmodel.AuthState
 import com.disordo.viewmodel.SettingsViewModel
@@ -129,25 +131,39 @@ fun SignedOutProfileScreen(onSignInClick: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Card(elevation = CardDefaults.cardElevation(4.dp)) {
+        Card(
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            ),
+            shape = MaterialTheme.shapes.large
+        ) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Default.Login, contentDescription = "Giriş", modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Verilerinizi Yedekleyin",
-                    style = MaterialTheme.typography.headlineSmall,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Görsellerinizi bulutta güvenle saklamak ve cihazlarınız arasında senkronize etmek için giriş yapın.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center
+                Icon(
+                    Icons.Default.Login, 
+                    contentDescription = "Giriş", 
+                    modifier = Modifier.size(64.dp), 
+                    tint = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "Verilerinizi Yedekleyin",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Görsellerinizi bulutta güvenle saklamak ve cihazlarınız arasında senkronize etmek için giriş yapın.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    textAlign = TextAlign.Center,
+                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.2
+                )
+                Spacer(modifier = Modifier.height(32.dp))
                 GoogleSignInButton(onClick = onSignInClick)
             }
         }
@@ -156,25 +172,39 @@ fun SignedOutProfileScreen(onSignInClick: () -> Unit) {
 
 @Composable
 fun ProfileHeader(user: FirebaseUser) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        AsyncImage(
-            model = user.photoUrl,
-            contentDescription = "Profil Fotoğrafı",
-            modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape),
-            contentScale = ContentScale.Crop
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = user.displayName ?: "İsim Yok",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = user.email ?: "E-posta Yok",
-            style = MaterialTheme.typography.bodyLarge
-        )
+    Card(
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        ),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            AsyncImage(
+                model = user.photoUrl,
+                contentDescription = "Profil Fotoğrafı",
+                modifier = Modifier
+                    .size(120.dp)
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = user.displayName ?: "İsim Yok",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = user.email ?: "E-posta Yok",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
     }
 }
 
@@ -182,33 +212,75 @@ fun ProfileHeader(user: FirebaseUser) {
 fun SyncSection(settingsViewModel: SettingsViewModel) {
     val syncStatus by settingsViewModel.syncStatus.collectAsState()
 
-    Card(elevation = CardDefaults.cardElevation(2.dp)) {
+    Card(
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        shape = MaterialTheme.shapes.medium
+    ) {
         ListItem(
-            headlineContent = { Text("Veri Senkronizasyonu") },
+            headlineContent = { 
+                Text(
+                    "Veri Senkronizasyonu",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            },
             supportingContent = {
                 when (syncStatus) {
-                    SyncStatus.IDLE -> Text("Değişiklikler eşitlenmeyi bekliyor.")
-                    SyncStatus.SYNCING -> Text("Eşitleniyor...")
-                    SyncStatus.SUCCESS -> Text("Tüm veriler güncel.")
-                    SyncStatus.ERROR -> Text("Eşitleme sırasında hata oluştu.")
+                    SyncStatus.IDLE -> Text(
+                        "Değişiklikler eşitlenmeyi bekliyor.",
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    SyncStatus.SYNCING -> Text(
+                        "Eşitleniyor...",
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    SyncStatus.SUCCESS -> Text(
+                        "Tüm veriler güncel.",
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    SyncStatus.ERROR -> Text(
+                        "Eşitleme sırasında hata oluştu.",
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             },
             leadingContent = {
                 Icon(
                     Icons.Default.CloudSync,
                     contentDescription = "Senkronizasyon",
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
             },
             trailingContent = {
                 when (syncStatus) {
                     SyncStatus.IDLE -> IconButton(onClick = { settingsViewModel.startSync() }) {
-                        Icon(Icons.Default.Sync, contentDescription = "Şimdi Eşitle")
+                        Icon(
+                            Icons.Default.Sync, 
+                            contentDescription = "Şimdi Eşitle",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
-                    SyncStatus.SYNCING -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    SyncStatus.SUCCESS -> Icon(Icons.Default.CheckCircle, contentDescription = "Başarılı", tint = MaterialTheme.colorScheme.primary)
+                    SyncStatus.SYNCING -> CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    SyncStatus.SUCCESS -> Icon(
+                        Icons.Default.CheckCircle, 
+                        contentDescription = "Başarılı", 
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
                     SyncStatus.ERROR -> IconButton(onClick = { settingsViewModel.startSync() }) {
-                        Icon(Icons.Default.Error, contentDescription = "Tekrar Dene", tint = MaterialTheme.colorScheme.error)
+                        Icon(
+                            Icons.Default.Error, 
+                            contentDescription = "Tekrar Dene", 
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 }
             }
