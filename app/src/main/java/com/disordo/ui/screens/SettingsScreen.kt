@@ -43,8 +43,16 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen() {
-    val application = LocalContext.current.applicationContext as DisordoApplication
     val context = LocalContext.current
+    val application = context.applicationContext as? DisordoApplication
+    
+    if (application == null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Uygulama yüklenemedi")
+        }
+        return
+    }
+    
     val authViewModel: AuthViewModel = viewModel(factory = ViewModelFactory(application))
     val settingsViewModel: SettingsViewModel = viewModel(factory = ViewModelFactory(application))
     val authState by authViewModel.authState.collectAsState()
