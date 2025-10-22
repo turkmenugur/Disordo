@@ -362,20 +362,13 @@ private fun ARTextOverlay(textLines: List<RecognizedTextLine>) {
         textLines.forEach { line ->
             val rect = line.boundingBox
             
-            // Arka plan (okunabilirlik için)
-            drawRoundRect(
-                color = Color.Black.copy(alpha = 0.75f),
-                topLeft = Offset(rect.left.toFloat() - 4f, rect.top.toFloat() - 4f),
-                size = Size(rect.width().toFloat() + 8f, rect.height().toFloat() + 8f),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
-            )
-
-            // Open Dyslexia font ile metin - tam hizalı
-            val fontSize = with(density) { 
-                min((rect.height() * 0.9f).toSp().value, 24f).sp
+            // Font boyutunu bounding box yüksekliğine göre ayarla
+            var fontSize = with(density) { 
+                (rect.height() * 0.85f).toSp()
             }
             
-            val textLayoutResult = textMeasurer.measure(
+            // İlk ölçüm - metin ne kadar yer kaplıyor?
+            var textLayoutResult = textMeasurer.measure(
                 text = line.text,
                 style = TextStyle(
                     color = Color.White,
@@ -383,8 +376,34 @@ private fun ARTextOverlay(textLines: List<RecognizedTextLine>) {
                     fontFamily = OpenDyslexic
                 )
             )
+            
+            // Eğer metin bounding box'tan genişse, font boyutunu küçült
+            if (textLayoutResult.size.width > rect.width()) {
+                val scale = rect.width().toFloat() / textLayoutResult.size.width.toFloat()
+                fontSize = with(density) { 
+                    (fontSize.value * scale * 0.95f).sp // %95 için biraz margin
+                }
+                
+                // Yeni boyutla tekrar ölçüm
+                textLayoutResult = textMeasurer.measure(
+                    text = line.text,
+                    style = TextStyle(
+                        color = Color.White,
+                        fontSize = fontSize,
+                        fontFamily = OpenDyslexic
+                    )
+                )
+            }
+            
+            // Arka plan - tam bounding box üzerine
+            drawRoundRect(
+                color = Color.Black.copy(alpha = 0.8f),
+                topLeft = Offset(rect.left.toFloat(), rect.top.toFloat()),
+                size = Size(rect.width().toFloat(), rect.height().toFloat()),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f)
+            )
 
-            // Metni tam ortala
+            // Metni bounding box içinde ortala (yatay ve dikey)
             val textX = rect.left.toFloat() + (rect.width() - textLayoutResult.size.width) / 2f
             val textY = rect.top.toFloat() + (rect.height() - textLayoutResult.size.height) / 2f
 
