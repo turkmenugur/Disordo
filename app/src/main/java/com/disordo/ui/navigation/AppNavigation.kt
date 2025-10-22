@@ -7,7 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.disordo.TextRecognitionScreen
+import com.disordo.ui.screens.ARScreen
 import com.disordo.ui.screens.CameraScreen
 import com.disordo.ui.screens.HomeScreen
 import com.disordo.ui.screens.SettingsScreen
@@ -33,7 +33,7 @@ fun AppNavigation(navController: NavHostController, paddingValues: PaddingValues
             CameraScreen()
         }
         composable(Screen.AR.route) {
-            TextRecognitionScreen()
+            ARScreen()
         }
         composable(Screen.Profile.route) {
             SettingsScreen()
