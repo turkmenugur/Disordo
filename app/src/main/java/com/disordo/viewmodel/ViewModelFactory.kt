@@ -11,7 +11,7 @@ class ViewModelFactory(private val application: DisordoApplication) : ViewModelP
                 AuthViewModel(application.authRepository, application.userPreferencesRepository) as T
             }
             modelClass.isAssignableFrom(HomeViewModel::class.java) -> {
-                HomeViewModel(application.imageRepository) as T
+                HomeViewModel(application.imageRepository, application.applicationContext) as T
             }
             modelClass.isAssignableFrom(CameraViewModel::class.java) -> {
                 CameraViewModel(application.imageRepository) as T

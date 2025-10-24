@@ -39,7 +39,20 @@ android {
     }
     buildFeatures {
         compose = true
+        mlModelBinding = true
     }
+    
+    aaptOptions {
+        noCompress("tflite")
+    }
+    
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+    
+    ndkVersion = "25.1.8937393"
 }
 
 dependencies {
@@ -95,6 +108,11 @@ dependencies {
 
     // Guava (ListenableFuture için gerekli)
     implementation("com.google.guava:guava:33.0.0-android")
+
+    // TensorFlow Lite - Güncel ve stabil versiyon
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

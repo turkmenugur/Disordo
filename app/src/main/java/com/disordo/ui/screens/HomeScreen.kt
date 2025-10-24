@@ -1,5 +1,8 @@
 package com.disordo.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -29,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.disordo.DisordoApplication
 import com.disordo.data.local.entity.UploadedImage
+import com.disordo.ml.DyslexiaResult
 import com.disordo.ui.components.ImageCard
 import com.disordo.ui.theme.*
 import com.disordo.viewmodel.HomeViewModel
@@ -45,11 +49,33 @@ fun HomeScreen(
 
     val context = LocalContext.current
     val application = context.applicationContext as? DisordoApplication
-    val images = if (application != null) {
-        val homeViewModel: HomeViewModel = viewModel(factory = ViewModelFactory(application))
-        homeViewModel.images.collectAsState().value
+    
+    val homeViewModel: HomeViewModel? = if (application != null) {
+        viewModel(factory = ViewModelFactory(application))
     } else {
-        emptyList()
+        null
+    }
+    
+    val images = homeViewModel?.images?.collectAsState()?.value ?: emptyList()
+    val analysisResult = homeViewModel?.analysisResult?.collectAsState()?.value
+    val isAnalyzing = homeViewModel?.isAnalyzing?.collectAsState()?.value ?: false
+    
+    // Galeri picker launcher
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            homeViewModel?.analyzeImage(it)
+        }
+    }
+    
+    // İzin isteme launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            galleryLauncher.launch("image/*")
+        }
     }
 
     LaunchedEffect(key1 = Unit) {
@@ -124,8 +150,26 @@ fun HomeScreen(
             // Hızlı Aksiyonlar
             ActionButtons(
                 onNavigateToCamera = onNavigateToCamera,
-                onNavigateToGallery = onNavigateToGallery
+                onNavigateToGallery = {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        galleryLauncher.launch("image/*")
+                    } else {
+                        permissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                }
             )
+            
+            // Analiz sonucu gösterimi
+            if (isAnalyzing) {
+                AnalyzingCard()
+            }
+            
+            analysisResult?.let { result ->
+                AnalysisResultCard(
+                    result = result,
+                    onDismiss = { homeViewModel?.clearAnalysisResult() }
+                )
+            }
 
             // Progress kartı
             ProgressCard()
@@ -544,6 +588,239 @@ fun MotivationCard() {
                     fontSize = 15.sp
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun AnalyzingCard() {
+    val infiniteTransition = rememberInfiniteTransition(label = "analyzing")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+    
+    Card(
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Autorenew,
+                    contentDescription = "Analiz ediliyor",
+                    modifier = Modifier
+                        .size(64.dp)
+                        .rotate(rotation),
+                    tint = disordo_coral
+                )
+                Text(
+                    text = "Analiz Ediliyor...",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = disordo_brown,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
+                Text(
+                    text = "Yapay zeka görüntünüzü inceliyor",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = disordo_brown.copy(alpha = 0.7f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AnalysisResultCard(
+    result: DyslexiaResult,
+    onDismiss: () -> Unit
+) {
+    val scale = remember { Animatable(0.8f) }
+    
+    LaunchedEffect(key1 = Unit) {
+        scale.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        )
+    }
+    
+    Card(
+        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (result.isDyslexiaDetected) 
+                disordo_peach.copy(alpha = 0.2f) 
+            else 
+                disordo_mint.copy(alpha = 0.2f)
+        ),
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale.value)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = if (result.errorMessage == null) 
+                            Icons.Default.CheckCircle 
+                        else 
+                            Icons.Default.Error,
+                        contentDescription = null,
+                        modifier = Modifier.size(36.dp),
+                        tint = if (result.errorMessage == null) 
+                            disordo_coral 
+                        else 
+                            Color.Red
+                    )
+                    Text(
+                        text = "Analiz Sonucu",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = disordo_brown,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Kapat",
+                        tint = disordo_brown
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            if (result.errorMessage != null) {
+                // Hata durumu
+                Text(
+                    text = result.errorMessage,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.Red,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                // Başarılı analiz sonucu
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Risk Skoru
+                    ResultItem(
+                        label = "Risk Seviyesi",
+                        value = result.getRiskLevelText(),
+                        color = when {
+                            result.riskScore < 0.3f -> disordo_mint
+                            result.riskScore < 0.6f -> disordo_peach
+                            else -> disordo_coral
+                        }
+                    )
+                    
+                    // Yüzde gösterimi
+                    ResultItem(
+                        label = "Risk Yüzdesi",
+                        value = "${result.getRiskPercentage()}%",
+                        color = disordo_coral
+                    )
+                    
+                    // Güven seviyesi
+                    ResultItem(
+                        label = "Güven Seviyesi",
+                        value = "${(result.confidence * 100).toInt()}%",
+                        color = disordo_mint
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Durum mesajı
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (result.isDyslexiaDetected) 
+                                disordo_coral.copy(alpha = 0.3f)
+                            else
+                                disordo_mint.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = if (result.isDyslexiaDetected) {
+                                    "⚠️ Disleksi riski tespit edildi. Uzman değerlendirmesi önerilir."
+                                } else {
+                                    "✅ Normal değerlere sahip görünüyor."
+                                },
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = disordo_brown,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                lineHeight = 22.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ResultItem(
+    label: String,
+    value: String,
+    color: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = disordo_brown.copy(alpha = 0.8f),
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+        )
+        Box(
+            modifier = Modifier
+                .background(
+                    color = color.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                color = color,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            )
         }
     }
 }
