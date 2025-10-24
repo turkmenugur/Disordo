@@ -20,6 +20,11 @@ class DyslexiaDetector(private val context: Context) {
     private val modelFileName = "best_float32.tflite"
     private var isModelLoaded = false
     
+    // Model spesifik ayarlar (modelinize göre değiştirin)
+    private val INPUT_SIZE = 640 // Model girdi boyutu
+    private val USE_FLOAT_INPUT = true // true: float32 (0-1), false: uint8 (0-255)
+    private val NUM_CLASSES = 2 // Çıktı sınıf sayısı
+    
     /**
      * Modeli lazy loading ile yükle
      */
@@ -70,48 +75,48 @@ class DyslexiaDetector(private val context: Context) {
         }
         
         try {
-            // 1. Model girdi boyutunu otomatik tespit et
+            // 1. Model girdi boyutunu logla
             val inputTensor = interpreter?.getInputTensor(0)
             val inputShape = inputTensor?.shape()
+            val inputDataType = inputTensor?.dataType()
             
-            if (inputShape == null || inputShape.size < 4) {
-                throw Exception("Geçersiz model girdi formatı")
-            }
+            Log.d(TAG, "Model girdi shape: ${inputShape?.contentToString()}")
+            Log.d(TAG, "Model girdi data type: $inputDataType")
+            Log.d(TAG, "Bitmap orijinal boyut: ${bitmap.width}x${bitmap.height}")
             
-            // Shape genellikle [batch, height, width, channels] formatında
-            val inputHeight = inputShape[1]
-            val inputWidth = inputShape[2]
-            val inputChannels = inputShape[3]
-            
-            Log.d(TAG, "Model girdi: ${inputWidth}x${inputHeight}x${inputChannels}")
-            
-            // 2. Görüntüyü model için uygun boyuta getir
-            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true)
+            // 2. Görüntüyü sabit 640x640 boyutuna getir
+            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, INPUT_SIZE, INPUT_SIZE, true)
+            Log.d(TAG, "Resize edilmiş boyut: ${resizedBitmap.width}x${resizedBitmap.height}")
             
             // 3. Bitmap'i ByteBuffer'a dönüştür
-            val inputBuffer = bitmapToByteBuffer(resizedBitmap, inputWidth, inputHeight)
+            val inputBuffer = bitmapToByteBuffer(resizedBitmap)
+            Log.d(TAG, "Input buffer boyutu: ${inputBuffer.capacity()} bytes")
             
             // 4. Çıktı tensörünü hazırla
             val outputTensor = interpreter?.getOutputTensor(0)
             val outputShape = outputTensor?.shape()
+            Log.d(TAG, "Model çıktı shape: ${outputShape?.contentToString()}")
             
             if (outputShape == null || outputShape.isEmpty()) {
                 throw Exception("Geçersiz model çıktı formatı")
             }
             
-            val outputSize = outputShape.last() // Son boyut sınıf sayısı
-            Log.d(TAG, "Model çıktı boyutu: $outputSize")
+            // Output shape'e göre buffer oluştur
+            val outputSize = outputShape.reduce { acc, i -> acc * i }
+            Log.d(TAG, "Çıktı buffer boyutu: $outputSize elements")
             
             val outputBuffer = ByteBuffer.allocateDirect(outputSize * 4).apply {
                 order(ByteOrder.nativeOrder())
             }
             
             // 5. Model inference
+            Log.d(TAG, "Model inference başlıyor...")
             interpreter?.run(inputBuffer, outputBuffer)
+            Log.d(TAG, "Model inference tamamlandı")
             
             // 6. Sonuçları parse et
             outputBuffer.rewind()
-            val scores = FloatArray(outputSize) { 
+            val scores = FloatArray(NUM_CLASSES) { 
                 outputBuffer.float 
             }
             
@@ -145,36 +150,61 @@ class DyslexiaDetector(private val context: Context) {
     /**
      * Bitmap'i TensorFlow Lite için uygun ByteBuffer formatına dönüştürür
      */
-    private fun bitmapToByteBuffer(bitmap: Bitmap, width: Int, height: Int): ByteBuffer {
-        // Bitmap'in zaten resize edilmiş olduğundan emin ol
+    private fun bitmapToByteBuffer(bitmap: Bitmap): ByteBuffer {
+        val width = INPUT_SIZE
+        val height = INPUT_SIZE
+        
+        // Bitmap'in kesinlikle doğru boyutta olduğundan emin ol
         val scaledBitmap = if (bitmap.width != width || bitmap.height != height) {
+            Log.w(TAG, "Bitmap boyutu uyuşmuyor, tekrar resize ediliyor: ${bitmap.width}x${bitmap.height} -> ${width}x${height}")
             Bitmap.createScaledBitmap(bitmap, width, height, true)
         } else {
             bitmap
         }
         
-        val byteBuffer = ByteBuffer.allocateDirect(4 * width * height * 3)
+        // Buffer boyutunu hesapla
+        val numElements = width * height * 3
+        val bytesPerElement = if (USE_FLOAT_INPUT) 4 else 1 // float32 = 4 bytes, uint8 = 1 byte
+        val bufferSize = numElements * bytesPerElement
+        
+        Log.d(TAG, "ByteBuffer oluşturuluyor: $bufferSize bytes ($width x $height x 3 x $bytesPerElement)")
+        
+        val byteBuffer = ByteBuffer.allocateDirect(bufferSize)
         byteBuffer.order(ByteOrder.nativeOrder())
         
-        val intValues = IntArray(width * height)
-        // Parametreleri düzelt: stride width olmalı, x ve y koordinatları 0
+        // Tüm pixelleri bir kerede al
+        val pixelCount = width * height
+        val intValues = IntArray(pixelCount)
         scaledBitmap.getPixels(intValues, 0, width, 0, 0, width, height)
         
-        var pixel = 0
-        for (i in 0 until height) {
-            for (j in 0 until width) {
-                val value = intValues[pixel++]
-                
-                // RGB değerlerini normalize et (0-255 -> 0-1)
-                val r = ((value shr 16) and 0xFF) / 255.0f
-                val g = ((value shr 8) and 0xFF) / 255.0f
-                val b = (value and 0xFF) / 255.0f
-                
-                byteBuffer.putFloat(r)
-                byteBuffer.putFloat(g)
-                byteBuffer.putFloat(b)
+        Log.d(TAG, "Pixel array boyutu: ${intValues.size}, Beklenen: $pixelCount")
+        
+        // Pixelleri ByteBuffer'a yaz
+        for (pixelIndex in 0 until pixelCount) {
+            val pixel = intValues[pixelIndex]
+            
+            // RGB değerlerini çıkar
+            val r = (pixel shr 16) and 0xFF
+            val g = (pixel shr 8) and 0xFF
+            val b = pixel and 0xFF
+            
+            if (USE_FLOAT_INPUT) {
+                // Float32 format (0.0 - 1.0 normalizasyon)
+                byteBuffer.putFloat(r / 255.0f)
+                byteBuffer.putFloat(g / 255.0f)
+                byteBuffer.putFloat(b / 255.0f)
+            } else {
+                // UInt8 format (0 - 255)
+                byteBuffer.put(r.toByte())
+                byteBuffer.put(g.toByte())
+                byteBuffer.put(b.toByte())
             }
         }
+        
+        Log.d(TAG, "ByteBuffer dolduruldu, position: ${byteBuffer.position()}, capacity: ${byteBuffer.capacity()}")
+        
+        // Buffer'ı başa sar
+        byteBuffer.rewind()
         
         return byteBuffer
     }
