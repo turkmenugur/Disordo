@@ -35,6 +35,13 @@ class DyslexiaDetector(private val context: Context) {
             }
             interpreter = Interpreter(model, options)
             isModelLoaded = true
+            
+            // Model girdi boyutunu logla
+            interpreter?.getInputTensor(0)?.let { tensor ->
+                val shape = tensor.shape()
+                Log.d(TAG, "Model girdi boyutu: ${shape.contentToString()}")
+            }
+            
             Log.d(TAG, "Model başarıyla yüklendi: $modelFileName")
         } catch (e: Exception) {
             Log.e(TAG, "Model yüklenirken hata oluştu: ${e.message}", e)
@@ -63,30 +70,54 @@ class DyslexiaDetector(private val context: Context) {
         }
         
         try {
-            // 1. Görüntüyü model için uygun boyuta getir
-            val inputSize = 224 // Modelinizin girdi boyutuna göre ayarlayın
-            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+            // 1. Model girdi boyutunu otomatik tespit et
+            val inputTensor = interpreter?.getInputTensor(0)
+            val inputShape = inputTensor?.shape()
             
-            // 2. Bitmap'i ByteBuffer'a dönüştür
-            val inputBuffer = bitmapToByteBuffer(resizedBitmap, inputSize)
+            if (inputShape == null || inputShape.size < 4) {
+                throw Exception("Geçersiz model girdi formatı")
+            }
             
-            // 3. Çıktı tensörünü hazırla
-            // Model çıktı boyutunu modelinize göre ayarlayın
-            val outputSize = 2 // Örnek: [disleksi_yok, disleksi_var] için 2 sınıf
+            // Shape genellikle [batch, height, width, channels] formatında
+            val inputHeight = inputShape[1]
+            val inputWidth = inputShape[2]
+            val inputChannels = inputShape[3]
+            
+            Log.d(TAG, "Model girdi: ${inputWidth}x${inputHeight}x${inputChannels}")
+            
+            // 2. Görüntüyü model için uygun boyuta getir
+            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true)
+            
+            // 3. Bitmap'i ByteBuffer'a dönüştür
+            val inputBuffer = bitmapToByteBuffer(resizedBitmap, inputWidth, inputHeight)
+            
+            // 4. Çıktı tensörünü hazırla
+            val outputTensor = interpreter?.getOutputTensor(0)
+            val outputShape = outputTensor?.shape()
+            
+            if (outputShape == null || outputShape.isEmpty()) {
+                throw Exception("Geçersiz model çıktı formatı")
+            }
+            
+            val outputSize = outputShape.last() // Son boyut sınıf sayısı
+            Log.d(TAG, "Model çıktı boyutu: $outputSize")
+            
             val outputBuffer = ByteBuffer.allocateDirect(outputSize * 4).apply {
                 order(ByteOrder.nativeOrder())
             }
             
-            // 4. Model inference
+            // 5. Model inference
             interpreter?.run(inputBuffer, outputBuffer)
             
-            // 5. Sonuçları parse et
+            // 6. Sonuçları parse et
             outputBuffer.rewind()
             val scores = FloatArray(outputSize) { 
                 outputBuffer.float 
             }
             
-            // 6. Sonuçları yorumla
+            Log.d(TAG, "Model çıktı skorları: ${scores.contentToString()}")
+            
+            // 7. Sonuçları yorumla
             val dyslexiaScore = scores.getOrNull(1) ?: 0f
             val confidence = scores.maxOrNull() ?: 0f
             val isDyslexiaDetected = dyslexiaScore > 0.5f
@@ -114,16 +145,24 @@ class DyslexiaDetector(private val context: Context) {
     /**
      * Bitmap'i TensorFlow Lite için uygun ByteBuffer formatına dönüştürür
      */
-    private fun bitmapToByteBuffer(bitmap: Bitmap, inputSize: Int): ByteBuffer {
-        val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
+    private fun bitmapToByteBuffer(bitmap: Bitmap, width: Int, height: Int): ByteBuffer {
+        // Bitmap'in zaten resize edilmiş olduğundan emin ol
+        val scaledBitmap = if (bitmap.width != width || bitmap.height != height) {
+            Bitmap.createScaledBitmap(bitmap, width, height, true)
+        } else {
+            bitmap
+        }
+        
+        val byteBuffer = ByteBuffer.allocateDirect(4 * width * height * 3)
         byteBuffer.order(ByteOrder.nativeOrder())
         
-        val intValues = IntArray(inputSize * inputSize)
-        bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        val intValues = IntArray(width * height)
+        // Parametreleri düzelt: stride width olmalı, x ve y koordinatları 0
+        scaledBitmap.getPixels(intValues, 0, width, 0, 0, width, height)
         
         var pixel = 0
-        for (i in 0 until inputSize) {
-            for (j in 0 until inputSize) {
+        for (i in 0 until height) {
+            for (j in 0 until width) {
                 val value = intValues[pixel++]
                 
                 // RGB değerlerini normalize et (0-255 -> 0-1)
