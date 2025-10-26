@@ -10,6 +10,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 sealed class Screen(val route: String, val icon: ImageVector, val label: String) {
     object Home : Screen("home", Icons.Default.Home, "Ana Sayfa")
     object Camera : Screen("camera", Icons.Default.CameraAlt, "Kamera")
+    object Results : Screen("results/{riskScore}", Icons.Default.Home, "Sonuçlar") {
+        fun createRoute(riskScore: Float) = "results/$riskScore"
+    }
     object AR : Screen("ar", Icons.Default.ViewInAr, "AR")
     object Profile : Screen("profile", Icons.Default.AccountCircle, "Profil")
 }

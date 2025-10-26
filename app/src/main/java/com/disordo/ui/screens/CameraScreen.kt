@@ -93,7 +93,9 @@ import com.disordo.viewmodel.CameraViewModel
 import com.disordo.viewmodel.ViewModelFactory
 
 @Composable
-fun CameraScreen() {
+fun CameraScreen(
+    onNavigateToResults: (Float) -> Unit = {}
+) {
     val application = LocalContext.current.applicationContext as DisordoApplication
     val cameraViewModel: CameraViewModel = viewModel(factory = ViewModelFactory(application))
     val context = LocalContext.current
@@ -117,7 +119,11 @@ fun CameraScreen() {
     )
 
     if (hasPermission) {
-        CameraPreview(cameraViewModel, onGalleryClick = { galleryLauncher.launch("image/*") })
+        CameraPreview(
+            cameraViewModel = cameraViewModel,
+            onGalleryClick = { galleryLauncher.launch("image/*") },
+            onNavigateToResults = onNavigateToResults
+        )
     } else {
         Box(
             modifier = Modifier
@@ -163,7 +169,8 @@ fun CameraScreen() {
 @Composable
 private fun CameraPreview(
     cameraViewModel: CameraViewModel,
-    onGalleryClick: () -> Unit
+    onGalleryClick: () -> Unit,
+    onNavigateToResults: (Float) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -175,6 +182,18 @@ private fun CameraPreview(
     
     // Çekilen fotoğrafı tut
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    
+    // Analiz tamamlandığında ResultsScreen'e yönlendir
+    LaunchedEffect(analysisResult) {
+        analysisResult?.let { result ->
+            if (result.errorMessage == null) {
+                // Analiz başarılı, ResultsScreen'e git
+                onNavigateToResults(result.riskScore)
+                cameraViewModel.clearAnalysisResult()
+                capturedBitmap = null
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Kamera preview - sadece fotoğraf çekilmemişse göster
