@@ -22,6 +22,9 @@ class CameraViewModel(
     private val _analysisResult = MutableStateFlow<DyslexiaResult?>(null)
     val analysisResult: StateFlow<DyslexiaResult?> = _analysisResult.asStateFlow()
     
+    private val _analyzedBitmap = MutableStateFlow<Bitmap?>(null)
+    val analyzedBitmap: StateFlow<Bitmap?> = _analyzedBitmap.asStateFlow()
+    
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
     
@@ -61,6 +64,7 @@ class CameraViewModel(
     private suspend fun analyzeImage(bitmap: Bitmap) {
         _isAnalyzing.value = true
         _analysisResult.value = null
+        _analyzedBitmap.value = bitmap // Bitmap'i sakla
         
         try {
             val result = withContext(Dispatchers.Default) {
@@ -72,6 +76,7 @@ class CameraViewModel(
                 riskScore = 0f,
                 confidence = 0f,
                 isDyslexiaDetected = false,
+                detections = emptyList(),
                 errorMessage = "Analiz sırasında hata: ${e.message}"
             )
         } finally {
@@ -84,6 +89,7 @@ class CameraViewModel(
      */
     fun clearAnalysisResult() {
         _analysisResult.value = null
+        _analyzedBitmap.value = null
     }
     
     override fun onCleared() {

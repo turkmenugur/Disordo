@@ -30,6 +30,9 @@ class HomeViewModel(
     private val _analysisResult = MutableStateFlow<DyslexiaResult?>(null)
     val analysisResult: StateFlow<DyslexiaResult?> = _analysisResult.asStateFlow()
     
+    private val _analyzedBitmap = MutableStateFlow<Bitmap?>(null)
+    val analyzedBitmap: StateFlow<Bitmap?> = _analyzedBitmap.asStateFlow()
+    
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
     
@@ -72,6 +75,7 @@ class HomeViewModel(
                 }
                 
                 if (bitmap != null) {
+                    _analyzedBitmap.value = bitmap
                     val result = withContext(Dispatchers.Default) {
                         dyslexiaDetector?.detectDyslexia(bitmap)
                     }
@@ -81,6 +85,7 @@ class HomeViewModel(
                         riskScore = 0f,
                         confidence = 0f,
                         isDyslexiaDetected = false,
+                        detections = emptyList(),
                         errorMessage = "Görüntü yüklenemedi"
                     )
                 }
@@ -106,6 +111,7 @@ class HomeViewModel(
             _analysisResult.value = null
             
             try {
+                _analyzedBitmap.value = bitmap
                 val result = withContext(Dispatchers.Default) {
                     dyslexiaDetector?.detectDyslexia(bitmap)
                 }
@@ -115,6 +121,7 @@ class HomeViewModel(
                     riskScore = 0f,
                     confidence = 0f,
                     isDyslexiaDetected = false,
+                    detections = emptyList(),
                     errorMessage = "Hata: ${e.message}"
                 )
             } finally {
@@ -140,6 +147,7 @@ class HomeViewModel(
      */
     fun clearAnalysisResult() {
         _analysisResult.value = null
+        _analyzedBitmap.value = null
     }
     
     override fun onCleared() {

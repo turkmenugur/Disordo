@@ -25,6 +25,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import android.graphics.Bitmap
+import com.disordo.ml.DetectionResult
 import com.disordo.ui.theme.*
 import kotlinx.coroutines.delay
 
@@ -32,6 +41,8 @@ import kotlinx.coroutines.delay
 fun ResultsScreen(
     riskScore: Float = 0.0f,
     isLoading: Boolean = false,
+    bitmap: Bitmap? = null,
+    detections: List<DetectionResult> = emptyList(),
     onBackToHome: () -> Unit = {}
 ) {
     val alpha = remember { Animatable(0f) }
@@ -143,6 +154,15 @@ fun ResultsScreen(
             } else {
                 // Büyük Hero Kart
                 MegaHeroCard(riskScore)
+                
+                // Detection Results Image (if available)
+                if (bitmap != null && detections.isNotEmpty()) {
+                    DetectionResultImage(
+                        bitmap = bitmap,
+                        detections = detections,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 // Ana Risk Göstergesi
                 CircularRiskCard(riskScore)
@@ -1036,5 +1056,65 @@ fun ResultsScreenHighRiskPreview() {
 fun ResultsScreenLoadingPreview() {
     MaterialTheme {
         ResultsScreen(riskScore = 0.0f, isLoading = true)
+    }
+}
+
+/**
+ * Detection sonuçlarını görüntü üzerinde gösteren Composable
+ */
+@Composable
+fun DetectionResultImage(
+    bitmap: Bitmap,
+    detections: List<DetectionResult>,
+    modifier: Modifier = Modifier
+) {
+    val scale = remember { Animatable(0.9f) }
+    
+    LaunchedEffect(key1 = Unit) {
+        scale.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        )
+    }
+    
+    Card(
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(28.dp),
+        modifier = modifier
+            .scale(scale.value)
+            .padding(horizontal = 4.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // Görüntü
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "Analiz Edilen Görüntü",
+                modifier = Modifier.fillMaxWidth(),
+                contentScale = ContentScale.FillWidth
+            )
+            
+            // Bounding box'ları çiz
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val scaleX = size.width / bitmap.width
+                val scaleY = size.height / bitmap.height
+                
+                detections.forEach { detection ->
+                    val rect = detection.boundingBox
+                    val left = rect.left * scaleX
+                    val top = rect.top * scaleY
+                    val width = rect.width() * scaleX
+                    val height = rect.height() * scaleY
+                    
+                    // Kırmızı bounding box çiz
+                    drawRect(
+                        color = disordo_coral,
+                        topLeft = Offset(left, top),
+                        size = Size(width, height),
+                        style = Stroke(width = 4.dp.toPx())
+                    )
+                }
+            }
+        }
     }
 }

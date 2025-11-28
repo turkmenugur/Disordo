@@ -94,7 +94,7 @@ import com.disordo.viewmodel.ViewModelFactory
 
 @Composable
 fun CameraScreen(
-    onNavigateToResults: (Float) -> Unit = {}
+    onNavigateToResults: (Float, Bitmap?, List<com.disordo.ml.DetectionResult>) -> Unit = { _, _, _ -> }
 ) {
     val application = LocalContext.current.applicationContext as DisordoApplication
     val cameraViewModel: CameraViewModel = viewModel(factory = ViewModelFactory(application))
@@ -170,7 +170,7 @@ fun CameraScreen(
 private fun CameraPreview(
     cameraViewModel: CameraViewModel,
     onGalleryClick: () -> Unit,
-    onNavigateToResults: (Float) -> Unit
+    onNavigateToResults: (Float, Bitmap?, List<com.disordo.ml.DetectionResult>) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -178,19 +178,22 @@ private fun CameraPreview(
     
     // State'leri collect et
     val analysisResult by cameraViewModel.analysisResult.collectAsState()
+    val analyzedBitmap by cameraViewModel.analyzedBitmap.collectAsState()
     val isAnalyzing by cameraViewModel.isAnalyzing.collectAsState()
     
     // Çekilen fotoğrafı tut
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     
     // Analiz tamamlandığında ResultsScreen'e yönlendir
-    LaunchedEffect(analysisResult) {
+    LaunchedEffect(analysisResult, analyzedBitmap) {
         analysisResult?.let { result ->
-            if (result.errorMessage == null) {
-                // Analiz başarılı, ResultsScreen'e git
-                onNavigateToResults(result.riskScore)
-                cameraViewModel.clearAnalysisResult()
-                capturedBitmap = null
+            analyzedBitmap?.let { bitmap ->
+                if (result.errorMessage == null) {
+                    // Analiz başarılı, ResultsScreen'e git
+                    // Bitmap ve detections ViewModel'de saklanıyor, ResultsScreen'de alınacak
+                    onNavigateToResults(result.riskScore, bitmap, result.detections)
+                    // clearAnalysisResult ResultsScreen'den geri dönüldüğünde çağrılacak
+                }
             }
         }
     }

@@ -178,27 +178,27 @@ fun HomeScreen(
             MotivationCard()
         }
 
-        // Süper büyük FAB
-        FloatingActionButton(
-            onClick = onNavigateToCamera,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(28.dp)
-                .size(80.dp),
-            containerColor = disordo_coral,
-            shape = CircleShape,
-            elevation = FloatingActionButtonDefaults.elevation(
-                defaultElevation = 12.dp,
-                pressedElevation = 16.dp
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Default.CameraAlt,
-                contentDescription = "Fotoğraf Çek",
-                tint = Color.White,
-                modifier = Modifier.size(40.dp)
-            )
-        }
+//        // Süper büyük FAB
+//        FloatingActionButton(
+//            onClick = onNavigateToCamera,
+//            modifier = Modifier
+//                .align(Alignment.BottomEnd)
+//                .padding(28.dp)
+//                .size(80.dp),
+//            containerColor = disordo_coral,
+//            shape = CircleShape,
+//            elevation = FloatingActionButtonDefaults.elevation(
+//                defaultElevation = 12.dp,
+//                pressedElevation = 16.dp
+//            )
+//        ) {
+//            Icon(
+//                imageVector = Icons.Default.CameraAlt,
+//                contentDescription = "Fotoğraf Çek",
+//                tint = Color.White,
+//                modifier = Modifier.size(40.dp)
+//            )
+//        }
     }
 }
 

@@ -6,10 +6,12 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
+import android.graphics.Matrix
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
+import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
@@ -31,9 +33,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Size as ComposeSize
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -55,8 +56,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import kotlin.math.min
-import android.graphics.Matrix
+import kotlin.math.max
 
 data class RecognizedTextLine(
     val text: String,
@@ -160,6 +160,10 @@ private fun ARTextOverlayScreen() {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     var recognizedTextLines by remember { mutableStateOf<List<RecognizedTextLine>>(emptyList()) }
+    var imageWidth by remember { mutableIntStateOf(0) }
+    var imageHeight by remember { mutableIntStateOf(0) }
+    var imageRotation by remember { mutableIntStateOf(0) }
+    
     var isProcessing by remember { mutableStateOf(false) }
     var showCapturedImage by remember { mutableStateOf(false) }
     var capturedImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -240,10 +244,14 @@ private fun ARTextOverlayScreen() {
                         // ImageAnalysis - Optimize edilmiş
                         val imageAnalyzer = ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .setTargetResolution(Size(1280, 720)) // Yüksek çözünürlük
                             .build()
                             .also {
-                                it.setAnalyzer(cameraExecutor, OptimizedARTextAnalyzer { lines ->
+                                it.setAnalyzer(cameraExecutor, OptimizedARTextAnalyzer { lines, width, height, rotation ->
                                     recognizedTextLines = lines
+                                    imageWidth = width
+                                    imageHeight = height
+                                    imageRotation = rotation
                                 })
                             }
                         
@@ -276,7 +284,14 @@ private fun ARTextOverlayScreen() {
             )
 
             // AR Text Overlay - Real-time
-            ARTextOverlay(textLines = recognizedTextLines)
+            if (imageWidth > 0 && imageHeight > 0) {
+                ARTextOverlay(
+                    textLines = recognizedTextLines,
+                    imageWidth = imageWidth,
+                    imageHeight = imageHeight,
+                    rotation = imageRotation
+                )
+            }
         }
 
         // AI Processing Animasyonu - Sadece işlem sırasında
@@ -354,18 +369,49 @@ private fun NoTextFoundMessage() {
 }
 
 @Composable
-private fun ARTextOverlay(textLines: List<RecognizedTextLine>) {
+private fun ARTextOverlay(
+    textLines: List<RecognizedTextLine>,
+    imageWidth: Int,
+    imageHeight: Int,
+    rotation: Int
+) {
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
 
     Canvas(modifier = Modifier.fillMaxSize()) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+
+        val isRotated = rotation == 90 || rotation == 270
+        val uprightImageWidth = if (isRotated) imageHeight else imageWidth
+        val uprightImageHeight = if (isRotated) imageWidth else imageHeight
+
+        val scale = max(canvasWidth / uprightImageWidth, canvasHeight / uprightImageHeight)
+        
+        val scaledWidth = uprightImageWidth * scale
+        val scaledHeight = uprightImageHeight * scale
+        val offsetX = (canvasWidth - scaledWidth) / 2
+        val offsetY = (canvasHeight - scaledHeight) / 2
+
         textLines.forEach { line ->
             val rect = line.boundingBox
             
+            // Scale coordinates
+            val left = rect.left * scale + offsetX
+            val top = rect.top * scale + offsetY
+            val right = rect.right * scale + offsetX
+            val bottom = rect.bottom * scale + offsetY
+            
+            val rectWidth = right - left
+            val rectHeight = bottom - top
+            
             // Font boyutunu bounding box yüksekliğine göre ayarla
             var fontSize = with(density) { 
-                (rect.height() * 0.85f).toSp()
+                (rectHeight * 0.85f).toSp()
             }
+            
+            // Minimum font boyutu
+            if (fontSize < 14.sp) fontSize = 14.sp
             
             // İlk ölçüm - metin ne kadar yer kaplıyor?
             var textLayoutResult = textMeasurer.measure(
@@ -373,15 +419,16 @@ private fun ARTextOverlay(textLines: List<RecognizedTextLine>) {
                 style = TextStyle(
                     color = Color.White,
                     fontSize = fontSize,
-                    fontFamily = OpenDyslexic
+                    fontFamily = OpenDyslexic,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                 )
             )
             
             // Eğer metin bounding box'tan genişse, font boyutunu küçült
-            if (textLayoutResult.size.width > rect.width()) {
-                val scale = rect.width().toFloat() / textLayoutResult.size.width.toFloat()
+            if (textLayoutResult.size.width > rectWidth) {
+                val scaleFactor = rectWidth / textLayoutResult.size.width.toFloat()
                 fontSize = with(density) { 
-                    (fontSize.value * scale * 0.95f).sp // %95 için biraz margin
+                    (fontSize.value * scaleFactor * 0.95f).sp 
                 }
                 
                 // Yeni boyutla tekrar ölçüm
@@ -390,7 +437,8 @@ private fun ARTextOverlay(textLines: List<RecognizedTextLine>) {
                     style = TextStyle(
                         color = Color.White,
                         fontSize = fontSize,
-                        fontFamily = OpenDyslexic
+                        fontFamily = OpenDyslexic,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                     )
                 )
             }
@@ -398,14 +446,14 @@ private fun ARTextOverlay(textLines: List<RecognizedTextLine>) {
             // Arka plan - tam bounding box üzerine
             drawRoundRect(
                 color = Color.Black.copy(alpha = 0.8f),
-                topLeft = Offset(rect.left.toFloat(), rect.top.toFloat()),
-                size = Size(rect.width().toFloat(), rect.height().toFloat()),
+                topLeft = Offset(left, top),
+                size = ComposeSize(rectWidth, rectHeight),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f)
             )
 
             // Metni bounding box içinde ortala (yatay ve dikey)
-            val textX = rect.left.toFloat() + (rect.width() - textLayoutResult.size.width) / 2f
-            val textY = rect.top.toFloat() + (rect.height() - textLayoutResult.size.height) / 2f
+            val textX = left + (rectWidth - textLayoutResult.size.width) / 2f
+            val textY = top + (rectHeight - textLayoutResult.size.height) / 2f
 
             drawText(
                 textLayoutResult = textLayoutResult,
@@ -464,7 +512,7 @@ private fun EdgeAIAnimation() {
         drawRect(
             brush = leftGradient,
             topLeft = Offset(0f, 0f),
-            size = Size(8.dp.toPx(), height)
+            size = ComposeSize(8.dp.toPx(), height)
         )
 
         // Sağ kenar - aşağıdan yukarıya
@@ -477,7 +525,7 @@ private fun EdgeAIAnimation() {
         drawRect(
             brush = rightGradient,
             topLeft = Offset(width - 8.dp.toPx(), 0f),
-            size = Size(8.dp.toPx(), height)
+            size = ComposeSize(8.dp.toPx(), height)
         )
 
         // Üst kenar - soldan sağa
@@ -490,7 +538,7 @@ private fun EdgeAIAnimation() {
         drawRect(
             brush = topGradient,
             topLeft = Offset(0f, 0f),
-            size = Size(width, 8.dp.toPx())
+            size = ComposeSize(width, 8.dp.toPx())
         )
 
         // Alt kenar - sağdan sola
@@ -503,7 +551,7 @@ private fun EdgeAIAnimation() {
         drawRect(
             brush = bottomGradient,
             topLeft = Offset(0f, height - 8.dp.toPx()),
-            size = Size(width, 8.dp.toPx())
+            size = ComposeSize(width, 8.dp.toPx())
         )
     }
 }
@@ -571,8 +619,18 @@ private fun StaticImageOverlayView(
             contentScale = ContentScale.Fit
         )
 
-        // Text overlay
-        ARTextOverlay(textLines = textLines)
+        // Text overlay for static image
+        // For static images, we need to handle scaling differently or assume the image fits the screen
+        // Here we assume ContentScale.Fit, so we need to calculate the destination rect
+        // This is complex for static images without more context on the image view size
+        // For now, we can try to use the same ARTextOverlay but we need image dimensions
+        
+        ARTextOverlay(
+            textLines = textLines,
+            imageWidth = bitmap.width,
+            imageHeight = bitmap.height,
+            rotation = 0 // Bitmap is already rotated
+        )
 
         // Kapat butonu
         IconButton(
@@ -595,7 +653,7 @@ private fun StaticImageOverlayView(
 
 // Optimize edilmiş Text Recognition Analyzer - Debounce ile
 private class OptimizedARTextAnalyzer(
-    private val onTextDetected: (List<RecognizedTextLine>) -> Unit
+    private val onTextDetected: (List<RecognizedTextLine>, Int, Int, Int) -> Unit
 ) : ImageAnalysis.Analyzer {
 
     private val textRecognizer: TextRecognizer =
@@ -626,6 +684,8 @@ private class OptimizedARTextAnalyzer(
         
         val rotationDegrees = imageProxy.imageInfo.rotationDegrees
         val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
+        val width = imageProxy.width
+        val height = imageProxy.height
 
         textRecognizer.process(inputImage)
             .addOnSuccessListener { visionText ->
@@ -638,7 +698,7 @@ private class OptimizedARTextAnalyzer(
                         )
                     }
                 }
-                onTextDetected(lines)
+                onTextDetected(lines, width, height, rotationDegrees)
             }
             .addOnFailureListener { e ->
                 Log.e("ARTextAnalyzer", "Metin tanıma başarısız", e)
