@@ -29,7 +29,7 @@ class DyslexiaDetector(private val context: Context) {
     private val USE_FLOAT_INPUT = true
     private val NUM_CLASSES = 2
     private val NUM_ANCHORS = 8400
-    private val CONFIDENCE_THRESHOLD = 0.5f
+    private val CONFIDENCE_THRESHOLD = 0.6f  // Artırıldı: daha yüksek güven gereksinimi
     private val IOU_THRESHOLD = 0.45f
     
 
@@ -78,7 +78,9 @@ class DyslexiaDetector(private val context: Context) {
             val originalWidth = bitmap.width.toFloat()
             val originalHeight = bitmap.height.toFloat()
             
-            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, INPUT_SIZE, INPUT_SIZE, true)
+            // Görüntü preprocessing: kontrast ve parlaklık iyileştirmesi
+            val processedBitmap = enhanceImage(bitmap)
+            val resizedBitmap = Bitmap.createScaledBitmap(processedBitmap, INPUT_SIZE, INPUT_SIZE, true)
             val inputBuffer = bitmapToByteBuffer(resizedBitmap)
             
             val outputTensor = interpreter?.getOutputTensor(0)
@@ -105,8 +107,39 @@ class DyslexiaDetector(private val context: Context) {
             Log.d(TAG, "Detected ${detections.size} objects after NMS")
             
             // Filter for "Letter" class (assuming class 0 is background, class 1 is letter/error)
+            // DEBUG: Tüm detections'ı logla - BOX BOYUTLARINI DA GÖSTER
+            detections.forEachIndexed { index, detection ->
+                val box = detection.boundingBox
+                val boxWidth = box.width()
+                val boxHeight = box.height()
+                val boxArea = boxWidth * boxHeight
+                val imageArea = originalWidth * originalHeight
+                val coveragePercent = (boxArea / imageArea) * 100f
+                
+                Log.d(TAG, "Detection $index: class=${detection.classIndex}, score=${detection.score}")
+                Log.d(TAG, "  Box: (${box.left.toInt()}, ${box.top.toInt()}) -> (${box.right.toInt()}, ${box.bottom.toInt()})")
+                Log.d(TAG, "  Size: ${boxWidth.toInt()}x${boxHeight.toInt()} (${coveragePercent.toInt()}% of image)")
+                
+                // Eğer box çok büyükse (>%10 of image), muhtemelen kelime/metin bloğu
+                // Eğer box küçükse (<%2 of image), muhtemelen harf
+                val detectionType = when {
+                    coveragePercent > 10f -> "WORD/TEXT_BLOCK"
+                    coveragePercent > 2f -> "LETTER_GROUP"
+                    else -> "LETTER"
+                }
+                Log.d(TAG, "  Type: $detectionType")
+            }
+            
+            // Class mapping kontrolü:
+            // Eğer model class 0 = hatalı, class 1 = normal ise, classIndex'i ters çevir
+            // Şimdilik class 1 = hatalı olarak kabul ediyoruz
             val letterDetections = detections.filter { it.classIndex == 1 }
-            Log.d(TAG, "Letter detections: ${letterDetections.size}")
+            Log.d(TAG, "Letter detections (classIndex=1): ${letterDetections.size}")
+            
+            // Eğer classIndex=1 hiç yoksa, belki classIndex=0 hatalı olabilir
+            if (letterDetections.isEmpty() && detections.isNotEmpty()) {
+                Log.w(TAG, "Hiç classIndex=1 detection yok! Belki class mapping ters? Tüm detections: ${detections.map { it.classIndex }}")
+            }
             
             // Calculate risk score based on detections
             val riskScore = calculateRiskScore(letterDetections)
@@ -168,9 +201,11 @@ class DyslexiaDetector(private val context: Context) {
         
         val allDetections = mutableListOf<DetectionResult>()
         
-        // YOLOv8 output format: [1, anchors, channels] veya [1, channels, anchors]
-        // En yaygın format: [1, anchors, channels] = [1, 8400, 6]
-        // Her anchor için: [cx, cy, w, h, class0_score, class1_score, ...]
+        // YOLOv8 output format: [1, channels, anchors] = [1, 7, 8400]
+        // Format: [batch, channels, anchors]
+        // Her channel için tüm anchor'lar, sonra bir sonraki channel
+        // Layout: [cx_all_anchors, cy_all_anchors, w_all_anchors, h_all_anchors, class0_all_anchors, class1_all_anchors, ...]
+        // Yani: floatArray[anchor_index + channel_index * anchors]
         
         // Determine layout based on array size
         val expectedSize = channels * anchors
@@ -178,27 +213,49 @@ class DyslexiaDetector(private val context: Context) {
             Log.w(TAG, "Output size mismatch: expected $expectedSize, got ${floatArray.size}")
         }
         
-        // Try [anchors, channels] layout first (most common for YOLOv8)
+        // Format: [1, channels, anchors] = [1, 7, 8400]
+        // Channel order: [cx, cy, w, h, class0, class1, ...]
+        // Access: floatArray[anchor_index + channel_index * anchors]
+        
         for (i in 0 until anchors) {
-            val baseIndex = i * channels
+            // Read coordinates from channel 0, 1, 2, 3
+            val cxIndex = i + 0 * anchors  // cx channel
+            val cyIndex = i + 1 * anchors  // cy channel
+            val wIndex = i + 2 * anchors   // w channel
+            val hIndex = i + 3 * anchors   // h channel
             
-            if (baseIndex + channels > floatArray.size) {
+            if (hIndex >= floatArray.size) {
                 Log.w(TAG, "Reached end of array at anchor $i")
                 break
             }
             
-            // Read coordinates (in 640x640 pixel space)
-            val cx = floatArray[baseIndex + 0]
-            val cy = floatArray[baseIndex + 1]
-            val w = floatArray[baseIndex + 2]
-            val h = floatArray[baseIndex + 3]
+            // Read coordinates - YOLOv8 genellikle normalize edilmiş koordinatlar verir (0-1 arası)
+            val cxRaw = floatArray[cxIndex]
+            val cyRaw = floatArray[cyIndex]
+            val wRaw = floatArray[wIndex]
+            val hRaw = floatArray[hIndex]
             
-            // Read class scores and find max
+            // Debug: İlk birkaç detection için raw değerleri logla
+            if (i < 3) {
+                Log.d(TAG, "Anchor $i raw coords: cx=$cxRaw, cy=$cyRaw, w=$wRaw, h=$hRaw")
+            }
+            
+            // Koordinatlar normalize edilmiş mi kontrol et (0-1 arası ise INPUT_SIZE ile çarp)
+            // Eğer değerler 1'den küçükse normalize edilmiş demektir
+            val isNormalized = cxRaw < 1.0f && cyRaw < 1.0f && wRaw < 1.0f && hRaw < 1.0f
+            
+            val cx = if (isNormalized) cxRaw * INPUT_SIZE else cxRaw
+            val cy = if (isNormalized) cyRaw * INPUT_SIZE else cyRaw
+            val w = if (isNormalized) wRaw * INPUT_SIZE else wRaw
+            val h = if (isNormalized) hRaw * INPUT_SIZE else hRaw
+            
+            // Read class scores and find max (channels 4, 5, ...)
             var maxScore = 0f
             var maxClassIndex = 0
             for (c in 0 until NUM_CLASSES) {
-                if (baseIndex + 4 + c < floatArray.size) {
-                    val score = floatArray[baseIndex + 4 + c]
+                val scoreIndex = i + (4 + c) * anchors
+                if (scoreIndex < floatArray.size) {
+                    val score = floatArray[scoreIndex]
                     if (score > maxScore) {
                         maxScore = score
                         maxClassIndex = c
@@ -209,6 +266,11 @@ class DyslexiaDetector(private val context: Context) {
             // Filter by confidence threshold
             if (maxScore < CONFIDENCE_THRESHOLD) {
                 continue
+            }
+            
+            // Debug: Yüksek confidence detection'ları logla
+            if (maxScore > 0.7f && i < 10) {
+                Log.d(TAG, "High confidence detection: anchor=$i, class=$maxClassIndex, score=$maxScore, coords=($cx, $cy, $w, $h)")
             }
             
             // Convert from center coordinates to corner coordinates (in 640x640 space)
@@ -321,6 +383,21 @@ class DyslexiaDetector(private val context: Context) {
         val exp = logits.map { kotlin.math.exp(it - max) }
         val sum = exp.sum()
         return exp.map { (it / sum).toFloat() }.toFloatArray()
+    }
+    
+    /**
+     * Görüntü kalitesini iyileştirir: kontrast ve parlaklık ayarları
+     * El yazısı için kontrast artırma ve kenar keskinleştirme
+     */
+    private fun enhanceImage(bitmap: Bitmap): Bitmap {
+        // Şimdilik orijinal bitmap'i döndür
+        // İleride kontrast/brightness ayarları eklenebilir
+        // Android'de ColorMatrix kullanarak kontrast artırılabilir
+        // veya Canvas ile sharpening filter uygulanabilir
+        
+        // Not: Görüntü preprocessing model performansını etkileyebilir
+        // Model eğitimi sırasında kullanılan preprocessing ile aynı olmalı
+        return bitmap
     }
 
     private fun bitmapToByteBuffer(bitmap: Bitmap): ByteBuffer {

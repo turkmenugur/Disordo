@@ -32,7 +32,13 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
 import android.graphics.Bitmap
+import android.util.Log
 import com.disordo.ml.DetectionResult
 import com.disordo.ui.theme.*
 import kotlinx.coroutines.delay
@@ -155,13 +161,90 @@ fun ResultsScreen(
                 // Büyük Hero Kart
                 MegaHeroCard(riskScore)
                 
+                // Debug: Log ekle
+                LaunchedEffect(bitmap, detections) {
+                    Log.d("ResultsScreen", "Bitmap: ${bitmap != null}, Detections: ${detections.size}")
+                    detections.forEachIndexed { index, detection ->
+                        Log.d("ResultsScreen", "Detection $index: class=${detection.classIndex}, score=${detection.score}, box=${detection.boundingBox}")
+                    }
+                }
+                
                 // Detection Results Image (if available)
-                if (bitmap != null && detections.isNotEmpty()) {
+                if (bitmap != null) {
                     DetectionResultImage(
                         bitmap = bitmap,
                         detections = detections,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    
+                    // Detection istatistikleri (sadece detections varsa)
+                    if (detections.isNotEmpty()) {
+                        DetectionStatsCard(detections)
+                    } else {
+                        // Eğer detection yoksa bilgilendirme kartı
+                        Card(
+                            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = disordo_mint.copy(alpha = 0.1f)
+                            ),
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = disordo_mint,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Model bu görüntüde hatalı karakter tespit etmedi.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = disordo_brown,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // Bitmap yoksa bilgilendirme
+                    Card(
+                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = disordo_peach.copy(alpha = 0.1f)
+                        ),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Image,
+                                contentDescription = null,
+                                tint = disordo_peach,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Görüntü yüklenemedi. Lütfen tekrar deneyin.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = disordo_brown,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
                 }
 
                 // Ana Risk Göstergesi
@@ -1061,6 +1144,7 @@ fun ResultsScreenLoadingPreview() {
 
 /**
  * Detection sonuçlarını görüntü üzerinde gösteren Composable
+ * YOLOv8 modelinin tespit ettiği hatalı karakterleri görselleştirir
  */
 @Composable
 fun DetectionResultImage(
@@ -1069,6 +1153,8 @@ fun DetectionResultImage(
     modifier: Modifier = Modifier
 ) {
     val scale = remember { Animatable(0.9f) }
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
     
     LaunchedEffect(key1 = Unit) {
         scale.animateTo(
@@ -1094,10 +1180,16 @@ fun DetectionResultImage(
                 contentScale = ContentScale.FillWidth
             )
             
-            // Bounding box'ları çiz
+            // Bounding box'ları ve label'ları çiz
             Canvas(modifier = Modifier.matchParentSize()) {
                 val scaleX = size.width / bitmap.width
                 val scaleY = size.height / bitmap.height
+                
+                // Debug: Kaç detection var ve class'ları neler?
+                Log.d("DetectionResultImage", "Total detections: ${detections.size}")
+                detections.forEachIndexed { idx, det ->
+                    Log.d("DetectionResultImage", "Det $idx: class=${det.classIndex}, score=${det.score}")
+                }
                 
                 detections.forEach { detection ->
                     val rect = detection.boundingBox
@@ -1106,14 +1198,183 @@ fun DetectionResultImage(
                     val width = rect.width() * scaleX
                     val height = rect.height() * scaleY
                     
-                    // Kırmızı bounding box çiz
-                    drawRect(
-                        color = disordo_coral,
-                        topLeft = Offset(left, top),
-                        size = Size(width, height),
-                        style = Stroke(width = 4.dp.toPx())
-                    )
+                    // Class'a göre renk belirle
+                    // NOT: Model class mapping'i kontrol edilmeli
+                    // Şimdilik: classIndex 0 = Normal, 1 = Hatalı varsayıyoruz
+                    // Ama belki ters olabilir, bu yüzden her ikisini de gösteriyoruz
+                    val isError = detection.classIndex == 1
+                    val boxColor = if (isError) {
+                        disordo_coral // Hatalı karakterler için kırmızı
+                    } else {
+                        disordo_mint // Normal karakterler için yeşil
+                    }
+                    
+                    val labelText = if (isError) {
+                        "Hatalı Harf"
+                    } else {
+                        "Normal Harf"
+                    }
+                    
+                    // SADECE HATALI KARAKTERLERİ GÖSTER (classIndex == 1)
+                    if (isError) {
+                        // Bounding box çiz (daha kalın ve belirgin)
+                        drawRect(
+                            color = boxColor,
+                            topLeft = Offset(left, top),
+                            size = Size(width, height),
+                            style = Stroke(width = 5.dp.toPx())
+                        )
+                        
+                        // Yarı saydam arka plan ekle (daha belirgin olsun)
+                        drawRect(
+                            color = boxColor.copy(alpha = 0.2f),
+                            topLeft = Offset(left, top),
+                            size = Size(width, height),
+                            style = Fill
+                        )
+                        
+                        // Label arka planı (daha büyük ve okunabilir)
+                        val labelPadding = 6.dp.toPx()
+                        
+                        val labelTextStyle = TextStyle(
+                            color = Color.White,
+                            fontSize = with(density) { 14.sp },
+                            fontWeight = FontWeight.Bold
+                        )
+                        
+                        val scoreText = "${(detection.score * 100).toInt()}%"
+                        val fullLabelText = "$labelText $scoreText"
+                        
+                        val measuredText = textMeasurer.measure(
+                            text = fullLabelText,
+                            style = labelTextStyle
+                        )
+                        
+                        val labelWidth = measuredText.size.width + labelPadding * 2
+                        val labelHeight = measuredText.size.height + labelPadding * 2
+                        
+                        // Label arka planı (box'ın üstüne, eğer yer varsa)
+                        val labelTop = (top - labelHeight - 2.dp.toPx()).coerceAtLeast(0f)
+                        val labelLeft = left.coerceIn(0f, size.width - labelWidth)
+                        
+                        // Label arka planı (daha belirgin)
+                        drawRect(
+                            color = boxColor.copy(alpha = 0.95f),
+                            topLeft = Offset(labelLeft, labelTop),
+                            size = Size(labelWidth, labelHeight),
+                            style = Fill
+                        )
+                        
+                        // Label metni
+                        drawText(
+                            textLayoutResult = measuredText,
+                            topLeft = Offset(
+                                labelLeft + labelPadding,
+                                labelTop + labelPadding
+                            )
+                        )
+                    }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Detection istatistiklerini gösteren kart
+ */
+@Composable
+fun DetectionStatsCard(detections: List<DetectionResult>) {
+    val errorDetections = detections.filter { it.classIndex == 1 }
+    val normalDetections = detections.filter { it.classIndex == 0 }
+    val avgConfidence = if (errorDetections.isNotEmpty()) {
+        errorDetections.map { it.score }.average().toFloat()
+    } else {
+        0f
+    }
+    
+    Card(
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (errorDetections.isNotEmpty()) 
+                disordo_coral.copy(alpha = 0.1f)
+            else 
+                disordo_mint.copy(alpha = 0.1f)
+        ),
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Hatalı karakter sayısı
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "${errorDetections.size}",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = disordo_coral,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 32.sp
+                )
+                Text(
+                    text = "Hatalı\nKarakter",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = disordo_brown,
+                    textAlign = TextAlign.Center,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+            }
+            
+            // Ortalama güven skoru
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "${(avgConfidence * 100).toInt()}%",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = disordo_peach,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 32.sp
+                )
+                Text(
+                    text = "Ortalama\nGüven",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = disordo_brown,
+                    textAlign = TextAlign.Center,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+            }
+            
+            // Toplam tespit
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "${detections.size}",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = disordo_mint,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 32.sp
+                )
+                Text(
+                    text = "Toplam\nTespit",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = disordo_brown,
+                    textAlign = TextAlign.Center,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
             }
         }
     }

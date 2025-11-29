@@ -79,7 +79,12 @@ fun AppNavigation(navController: NavHostController, paddingValues: PaddingValues
                 null
             }
             
-            // Önce CameraViewModel'den, yoksa HomeViewModel'den al
+            // Önce Application'dan geçici saklanan verileri al
+            // Eğer yoksa ViewModel'lerden al
+            val tempBitmap = application?.tempAnalyzedBitmap
+            val tempDetections = application?.tempDetections ?: emptyList()
+            
+            // ViewModel'lerden de kontrol et (fallback)
             val cameraBitmap by cameraViewModel?.analyzedBitmap?.collectAsState() 
                 ?: remember { mutableStateOf<Bitmap?>(null) }
             val cameraResult by cameraViewModel?.analysisResult?.collectAsState()
@@ -90,9 +95,19 @@ fun AppNavigation(navController: NavHostController, paddingValues: PaddingValues
             val homeResult by homeViewModel?.analysisResult?.collectAsState()
                 ?: remember { mutableStateOf<com.disordo.ml.DyslexiaResult?>(null) }
             
-            // Hangi ViewModel'den veri geldiğini kontrol et
-            val analyzedBitmap = cameraBitmap ?: homeBitmap
-            val analysisResult = cameraResult ?: homeResult
+            // Önce Application'dan, yoksa ViewModel'lerden al
+            val analyzedBitmap = tempBitmap ?: (cameraBitmap ?: homeBitmap)
+            val analysisResult = if (tempDetections.isNotEmpty()) {
+                // Application'dan detections var, DyslexiaResult oluştur
+                com.disordo.ml.DyslexiaResult(
+                    riskScore = riskScore,
+                    confidence = tempDetections.maxOfOrNull { it.score } ?: 0f,
+                    isDyslexiaDetected = riskScore > 0.5f,
+                    detections = tempDetections
+                )
+            } else {
+                cameraResult ?: homeResult
+            }
             
             ResultsScreen(
                 riskScore = riskScore,
@@ -101,6 +116,7 @@ fun AppNavigation(navController: NavHostController, paddingValues: PaddingValues
                 onBackToHome = {
                     cameraViewModel?.clearAnalysisResult()
                     homeViewModel?.clearAnalysisResult()
+                    application?.clearTempAnalysisData()
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }

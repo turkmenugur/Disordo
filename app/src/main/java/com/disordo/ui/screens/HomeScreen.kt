@@ -173,6 +173,12 @@ fun HomeScreen(
                     analysisResult?.let { result ->
                         analyzedBitmap?.let { bitmap ->
                             if (result.errorMessage == null) {
+                                // Bitmap'i Application'da geçici olarak sakla
+                                (context.applicationContext as? com.disordo.DisordoApplication)?.setTempAnalysisData(
+                                    bitmap,
+                                    result.detections
+                                )
+                                
                                 // Analiz başarılı, ResultsScreen'e git
                                 hasNavigated = true
                                 onNavigateToResults(result.riskScore, bitmap, result.detections)

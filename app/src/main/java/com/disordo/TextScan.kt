@@ -126,7 +126,7 @@ private fun TextScanCameraView(modifier: Modifier = Modifier) {
     var capturedImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var capturedImageText by remember { mutableStateOf<Text?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
-    
+
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
     val cameraController = remember { mutableStateOf<ImageCapture?>(null) }
     
@@ -171,32 +171,32 @@ private fun TextScanCameraView(modifier: Modifier = Modifier) {
             )
         } else {
             // Camera preview
-            AndroidView(
-                factory = { ctx ->
-                    val previewView = PreviewView(ctx).apply {
-                        scaleType = PreviewView.ScaleType.FILL_CENTER
-                    }
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+        AndroidView(
+            factory = { ctx ->
+                val previewView = PreviewView(ctx).apply {
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                }
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
 
-                    cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-                        val preview = androidx.camera.core.Preview.Builder().build().also {
-                            it.setSurfaceProvider(previewView.surfaceProvider)
+                cameraProviderFuture.addListener({
+                    val cameraProvider = cameraProviderFuture.get()
+                    val preview = androidx.camera.core.Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+                    val imageAnalyzer = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setTargetResolution(Size(1280, 720)) 
+                        .build()
+                        .also {
+                            it.setAnalyzer(cameraExecutor, TextRecognitionAnalyzer { text, width, height, rotation ->
+                                if (!isFrozen) {
+                                    recognizedText = text
+                                    imageWidth = width
+                                    imageHeight = height
+                                    imageRotation = rotation
+                                }
+                            })
                         }
-                        val imageAnalyzer = ImageAnalysis.Builder()
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .setTargetResolution(Size(1280, 720)) 
-                            .build()
-                            .also {
-                                it.setAnalyzer(cameraExecutor, TextRecognitionAnalyzer { text, width, height, rotation ->
-                                    if (!isFrozen) {
-                                        recognizedText = text
-                                        imageWidth = width
-                                        imageHeight = height
-                                        imageRotation = rotation
-                                    }
-                                })
-                            }
                         
                         // ImageCapture for taking photos
                         val imageCapture = ImageCapture.Builder()
@@ -205,40 +205,40 @@ private fun TextScanCameraView(modifier: Modifier = Modifier) {
                         
                         cameraController.value = imageCapture
                         
-                        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                        try {
-                            cameraProvider.unbindAll()
+                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                    try {
+                        cameraProvider.unbindAll()
                             cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer, imageCapture)
-                        } catch (exc: Exception) {
-                            Log.e("TextScanCameraView", "Kamera bağlanamadı", exc)
-                        }
-                    }, ContextCompat.getMainExecutor(ctx))
-                    previewView
-                },
+                    } catch (exc: Exception) {
+                        Log.e("TextScanCameraView", "Kamera bağlanamadı", exc)
+                    }
+                }, ContextCompat.getMainExecutor(ctx))
+                previewView
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // AR Overlay
+        val textToShow = if (isFrozen) frozenText else recognizedText
+        val widthToShow = if (isFrozen) frozenImageWidth else imageWidth
+        val heightToShow = if (isFrozen) frozenImageHeight else imageHeight
+        val rotationToShow = if (isFrozen) frozenImageRotation else imageRotation
+
+        if (textToShow != null && widthToShow > 0 && heightToShow > 0) {
+            TextOverlay(
+                text = textToShow,
+                imageWidth = widthToShow,
+                imageHeight = heightToShow,
+                rotation = rotationToShow,
                 modifier = Modifier.fillMaxSize()
             )
+        }
 
-            // AR Overlay
-            val textToShow = if (isFrozen) frozenText else recognizedText
-            val widthToShow = if (isFrozen) frozenImageWidth else imageWidth
-            val heightToShow = if (isFrozen) frozenImageHeight else imageHeight
-            val rotationToShow = if (isFrozen) frozenImageRotation else imageRotation
-
-            if (textToShow != null && widthToShow > 0 && heightToShow > 0) {
-                TextOverlay(
-                    text = textToShow,
-                    imageWidth = widthToShow,
-                    imageHeight = heightToShow,
-                    rotation = rotationToShow,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-
-            if (isFrozen) {
-                 Box(modifier = Modifier
-                     .fillMaxSize()
-                     .border(4.dp, Color.Cyan.copy(alpha = 0.5f)))
-            }
+        if (isFrozen) {
+             Box(modifier = Modifier
+                 .fillMaxSize()
+                 .border(4.dp, Color.Cyan.copy(alpha = 0.5f)))
+        }
         }
         
         // Processing indicator
@@ -255,34 +255,34 @@ private fun TextScanCameraView(modifier: Modifier = Modifier) {
 
         // Bottom controls
         if (!showCapturedImage) {
-            Column(
-                modifier = Modifier.align(Alignment.BottomCenter)
-            ) {
-                Spacer(modifier = Modifier.weight(1f))
-                
+        Column(
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+
                 // Freeze/Unfreeze button
-                IconButton(
-                    onClick = {
-                        if (!isFrozen) {
-                            frozenText = recognizedText
-                            frozenImageWidth = imageWidth
-                            frozenImageHeight = imageHeight
-                            frozenImageRotation = imageRotation
-                        }
-                        isFrozen = !isFrozen
-                    },
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
+            IconButton(
+                onClick = {
+                    if (!isFrozen) {
+                        frozenText = recognizedText
+                        frozenImageWidth = imageWidth
+                        frozenImageHeight = imageHeight
+                        frozenImageRotation = imageRotation
+                    }
+                    isFrozen = !isFrozen
+                },
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
                         .padding(bottom = 120.dp)
-                        .size(64.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = if (isFrozen) Icons.Default.PlayArrow else Icons.Default.Pause,
-                        contentDescription = if (isFrozen) "Devam Et" else "Dondur",
-                        tint = Color.White,
-                        modifier = Modifier.size(40.dp)
-                    )
+                    .size(64.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = if (isFrozen) Icons.Default.PlayArrow else Icons.Default.Pause,
+                    contentDescription = if (isFrozen) "Devam Et" else "Dondur",
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
                 }
                 
                 // Camera and Gallery buttons

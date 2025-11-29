@@ -189,8 +189,13 @@ private fun CameraPreview(
         analysisResult?.let { result ->
             analyzedBitmap?.let { bitmap ->
                 if (result.errorMessage == null) {
+                    // Bitmap'i Application'da geçici olarak sakla
+                    (context.applicationContext as? com.disordo.DisordoApplication)?.setTempAnalysisData(
+                        bitmap,
+                        result.detections
+                    )
+                    
                     // Analiz başarılı, ResultsScreen'e git
-                    // Bitmap ve detections ViewModel'de saklanıyor, ResultsScreen'de alınacak
                     onNavigateToResults(result.riskScore, bitmap, result.detections)
                     // clearAnalysisResult ResultsScreen'den geri dönüldüğünde çağrılacak
                 }
