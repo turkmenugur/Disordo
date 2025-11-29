@@ -1,23 +1,41 @@
 package com.disordo
 
 import android.Manifest
+import android.content.ContentResolver
+import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.graphics.Rect
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.util.Log
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
@@ -90,6 +108,7 @@ private fun NoPermissionScreen(onRequestPermission: () -> Unit) {
 @Composable
 private fun TextScanCameraView(modifier: Modifier = Modifier) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
     var recognizedText by remember { mutableStateOf<Text?>(null) }
     var imageWidth by remember { mutableIntStateOf(0) }
     var imageHeight by remember { mutableIntStateOf(0) }
@@ -101,8 +120,35 @@ private fun TextScanCameraView(modifier: Modifier = Modifier) {
     var frozenImageWidth by remember { mutableIntStateOf(0) }
     var frozenImageHeight by remember { mutableIntStateOf(0) }
     var frozenImageRotation by remember { mutableIntStateOf(0) }
-
+    
+    // Captured/Selected image states
+    var showCapturedImage by remember { mutableStateOf(false) }
+    var capturedImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var capturedImageText by remember { mutableStateOf<Text?>(null) }
+    var isProcessing by remember { mutableStateOf(false) }
+    
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
+    val cameraController = remember { mutableStateOf<ImageCapture?>(null) }
+    
+    // Gallery launcher
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val bitmap = it.getBitmap(context.contentResolver)
+                bitmap?.let { bm ->
+                isProcessing = true
+                processImageForText(bm) { text ->
+                    if (text != null) {
+                        capturedImageBitmap = bm
+                        capturedImageText = text
+                        showCapturedImage = true
+                    }
+                    isProcessing = false
+                }
+            }
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -111,94 +157,186 @@ private fun TextScanCameraView(modifier: Modifier = Modifier) {
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        AndroidView(
-            factory = { ctx ->
-                val previewView = PreviewView(ctx).apply {
-                    scaleType = PreviewView.ScaleType.FILL_CENTER
+        // Show captured/selected image or camera preview
+        if (showCapturedImage && capturedImageBitmap != null && capturedImageText != null) {
+            // Static image with text overlay
+            StaticImageTextView(
+                bitmap = capturedImageBitmap!!,
+                text = capturedImageText!!,
+                onClose = {
+                    showCapturedImage = false
+                    capturedImageBitmap = null
+                    capturedImageText = null
                 }
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-
-                cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
-                    val preview = androidx.camera.core.Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
+            )
+        } else {
+            // Camera preview
+            AndroidView(
+                factory = { ctx ->
+                    val previewView = PreviewView(ctx).apply {
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
                     }
-                    val imageAnalyzer = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setTargetResolution(Size(1280, 720)) 
-                        .build()
-                        .also {
-                            it.setAnalyzer(cameraExecutor, TextRecognitionAnalyzer { text, width, height, rotation ->
-                                if (!isFrozen) {
-                                    recognizedText = text
-                                    imageWidth = width
-                                    imageHeight = height
-                                    imageRotation = rotation
-                                }
-                            })
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+
+                    cameraProviderFuture.addListener({
+                        val cameraProvider = cameraProviderFuture.get()
+                        val preview = androidx.camera.core.Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
                         }
-                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                    try {
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer)
-                    } catch (exc: Exception) {
-                        Log.e("TextScanCameraView", "Kamera bağlanamadı", exc)
-                    }
-                }, ContextCompat.getMainExecutor(ctx))
-                previewView
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-
-        // AR Overlay
-        val textToShow = if (isFrozen) frozenText else recognizedText
-        val widthToShow = if (isFrozen) frozenImageWidth else imageWidth
-        val heightToShow = if (isFrozen) frozenImageHeight else imageHeight
-        val rotationToShow = if (isFrozen) frozenImageRotation else imageRotation
-
-        if (textToShow != null && widthToShow > 0 && heightToShow > 0) {
-            TextOverlay(
-                text = textToShow,
-                imageWidth = widthToShow,
-                imageHeight = heightToShow,
-                rotation = rotationToShow,
+                        val imageAnalyzer = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .setTargetResolution(Size(1280, 720)) 
+                            .build()
+                            .also {
+                                it.setAnalyzer(cameraExecutor, TextRecognitionAnalyzer { text, width, height, rotation ->
+                                    if (!isFrozen) {
+                                        recognizedText = text
+                                        imageWidth = width
+                                        imageHeight = height
+                                        imageRotation = rotation
+                                    }
+                                })
+                            }
+                        
+                        // ImageCapture for taking photos
+                        val imageCapture = ImageCapture.Builder()
+                            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                            .build()
+                        
+                        cameraController.value = imageCapture
+                        
+                        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                        try {
+                            cameraProvider.unbindAll()
+                            cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer, imageCapture)
+                        } catch (exc: Exception) {
+                            Log.e("TextScanCameraView", "Kamera bağlanamadı", exc)
+                        }
+                    }, ContextCompat.getMainExecutor(ctx))
+                    previewView
+                },
                 modifier = Modifier.fillMaxSize()
             )
-        }
 
-        if (isFrozen) {
-             Box(modifier = Modifier
-                 .fillMaxSize()
-                 .border(4.dp, Color.Cyan.copy(alpha = 0.5f)))
-        }
+            // AR Overlay
+            val textToShow = if (isFrozen) frozenText else recognizedText
+            val widthToShow = if (isFrozen) frozenImageWidth else imageWidth
+            val heightToShow = if (isFrozen) frozenImageHeight else imageHeight
+            val rotationToShow = if (isFrozen) frozenImageRotation else imageRotation
 
-        Column(
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            Spacer(modifier = Modifier.weight(1f))
-
-            IconButton(
-                onClick = {
-                    if (!isFrozen) {
-                        frozenText = recognizedText
-                        frozenImageWidth = imageWidth
-                        frozenImageHeight = imageHeight
-                        frozenImageRotation = imageRotation
-                    }
-                    isFrozen = !isFrozen
-                },
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(bottom = 32.dp)
-                    .size(64.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = if (isFrozen) Icons.Default.PlayArrow else Icons.Default.Pause,
-                    contentDescription = if (isFrozen) "Devam Et" else "Dondur",
-                    tint = Color.White,
-                    modifier = Modifier.size(40.dp)
+            if (textToShow != null && widthToShow > 0 && heightToShow > 0) {
+                TextOverlay(
+                    text = textToShow,
+                    imageWidth = widthToShow,
+                    imageHeight = heightToShow,
+                    rotation = rotationToShow,
+                    modifier = Modifier.fillMaxSize()
                 )
+            }
+
+            if (isFrozen) {
+                 Box(modifier = Modifier
+                     .fillMaxSize()
+                     .border(4.dp, Color.Cyan.copy(alpha = 0.5f)))
+            }
+        }
+        
+        // Processing indicator
+        if (isProcessing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color.White)
+            }
+        }
+
+        // Bottom controls
+        if (!showCapturedImage) {
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                Spacer(modifier = Modifier.weight(1f))
+                
+                // Freeze/Unfreeze button
+                IconButton(
+                    onClick = {
+                        if (!isFrozen) {
+                            frozenText = recognizedText
+                            frozenImageWidth = imageWidth
+                            frozenImageHeight = imageHeight
+                            frozenImageRotation = imageRotation
+                        }
+                        isFrozen = !isFrozen
+                    },
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(bottom = 120.dp)
+                        .size(64.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = if (isFrozen) Icons.Default.PlayArrow else Icons.Default.Pause,
+                        contentDescription = if (isFrozen) "Devam Et" else "Dondur",
+                        tint = Color.White,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+                
+                // Camera and Gallery buttons
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 32.dp, start = 24.dp, end = 24.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Gallery button
+                    FloatingActionButton(
+                        onClick = { galleryLauncher.launch("image/*") },
+                        containerColor = Color.Black.copy(alpha = 0.7f),
+                        shape = CircleShape,
+                        modifier = Modifier.size(64.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PhotoLibrary,
+                            contentDescription = "Galeri",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    
+                    // Camera capture button
+                    FloatingActionButton(
+                        onClick = {
+                            cameraController.value?.let { capture ->
+                                isProcessing = true
+                                capturePhoto(context, capture) { bitmap ->
+                                    processImageForText(bitmap) { text ->
+                                        if (text != null) {
+                                            capturedImageBitmap = bitmap
+                                            capturedImageText = text
+                                            showCapturedImage = true
+                                        }
+                                        isProcessing = false
+                                    }
+                                }
+                            }
+                        },
+                        containerColor = Color.Black.copy(alpha = 0.7f),
+                        shape = CircleShape,
+                        modifier = Modifier.size(72.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = "Fotoğraf Çek",
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -281,6 +419,163 @@ fun TextOverlay(
                 }
             }
         }
+    }
+}
+
+/**
+ * Static image view with text overlay
+ */
+@Composable
+private fun StaticImageTextView(
+    bitmap: Bitmap,
+    text: Text,
+    onClose: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Image
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = "Çekilen Görüntü",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillWidth
+        )
+        
+        // Text overlay with proper scaling
+        TextOverlay(
+            text = text,
+            imageWidth = bitmap.width,
+            imageHeight = bitmap.height,
+            rotation = 0, // Static images are already rotated
+            modifier = Modifier.fillMaxSize()
+        )
+        
+        // Close button
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Kapat",
+                tint = Color.White,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Process bitmap for text recognition
+ */
+private fun processImageForText(bitmap: Bitmap, onResult: (Text?) -> Unit) {
+    val image = InputImage.fromBitmap(bitmap, 0)
+    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    
+    recognizer.process(image)
+        .addOnSuccessListener { visionText ->
+            onResult(visionText)
+        }
+        .addOnFailureListener { e ->
+            Log.e("TextScan", "Görsel metin tanıma başarısız", e)
+            onResult(null)
+        }
+}
+
+/**
+ * Capture photo from camera
+ */
+private fun capturePhoto(
+    context: Context,
+    imageCapture: ImageCapture,
+    onPhotoCaptured: (Bitmap) -> Unit
+) {
+    val executor = ContextCompat.getMainExecutor(context)
+    imageCapture.takePicture(executor, object : ImageCapture.OnImageCapturedCallback() {
+        @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+        override fun onCaptureSuccess(image: ImageProxy) {
+            try {
+                // Use the same approach as ARScreen
+                val bitmap = image.toBitmap()
+                val rotatedBitmap = rotateBitmap(bitmap, image.imageInfo.rotationDegrees.toFloat())
+                onPhotoCaptured(rotatedBitmap)
+            } catch (e: Exception) {
+                Log.e("TextScan", "Bitmap dönüştürme hatası", e)
+            } finally {
+                image.close()
+            }
+        }
+
+        override fun onError(exception: ImageCaptureException) {
+            Log.e("TextScan", "Fotoğraf çekme hatası", exception)
+        }
+    })
+}
+
+/**
+ * Extension function to convert ImageProxy to Bitmap
+ */
+@androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+private fun ImageProxy.toBitmap(): Bitmap {
+    val mediaImage = this.image ?: throw IllegalStateException("Image is null")
+    val yBuffer = mediaImage.planes[0].buffer
+    val uBuffer = mediaImage.planes[1].buffer
+    val vBuffer = mediaImage.planes[2].buffer
+    
+    val ySize = yBuffer.remaining()
+    val uSize = uBuffer.remaining()
+    val vSize = vBuffer.remaining()
+    
+    val nv21 = ByteArray(ySize + uSize + vSize)
+    yBuffer.get(nv21, 0, ySize)
+    vBuffer.get(nv21, ySize, vSize)
+    uBuffer.get(nv21, ySize + vSize, uSize)
+    
+    val yuvImage = android.graphics.YuvImage(
+        nv21,
+        android.graphics.ImageFormat.NV21,
+        this.width,
+        this.height,
+        null
+    )
+    val out = java.io.ByteArrayOutputStream()
+    yuvImage.compressToJpeg(
+        android.graphics.Rect(0, 0, this.width, this.height),
+        100,
+        out
+    )
+    val imageBytes = out.toByteArray()
+    return android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+        ?: throw IllegalStateException("Failed to decode bitmap")
+}
+
+/**
+ * Rotate bitmap
+ */
+private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
+    if (degrees == 0f) return bitmap
+    val matrix = Matrix().apply { postRotate(degrees) }
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+}
+
+/**
+ * Get bitmap from URI
+ */
+private fun Uri.getBitmap(contentResolver: ContentResolver): Bitmap? {
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            android.graphics.ImageDecoder.decodeBitmap(
+                android.graphics.ImageDecoder.createSource(contentResolver, this)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            MediaStore.Images.Media.getBitmap(contentResolver, this)
+        }
+    } catch (e: Exception) {
+        Log.e("TextScan", "Bitmap yükleme hatası", e)
+        null
     }
 }
 
