@@ -24,6 +24,7 @@ import com.disordo.ui.screens.HomeScreen
 import com.disordo.ui.screens.ResultsScreen
 import com.disordo.ui.screens.SettingsScreen
 import com.disordo.viewmodel.CameraViewModel
+import com.disordo.viewmodel.HomeViewModel
 import com.disordo.viewmodel.ViewModelFactory
 
 @Composable
@@ -40,6 +41,10 @@ fun AppNavigation(navController: NavHostController, paddingValues: PaddingValues
                 },
                 onNavigateToGallery = {
                     navController.navigate(Screen.Camera.route)
+                },
+                onNavigateToResults = { riskScore, bitmap, detections ->
+                    // Bitmap ve detections HomeViewModel'de saklanıyor, ResultsScreen'de alınacak
+                    navController.navigate(Screen.Results.createRoute(riskScore))
                 }
             )
         }
@@ -58,18 +63,36 @@ fun AppNavigation(navController: NavHostController, paddingValues: PaddingValues
             )
         ) { backStackEntry ->
             val riskScore = backStackEntry.arguments?.getFloat("riskScore") ?: 0f
-            // ViewModel'den bitmap ve detections'ı al
+            // ViewModel'den bitmap ve detections'ı al (hem CameraViewModel hem HomeViewModel'den)
             val context = LocalContext.current
             val application = context.applicationContext as? DisordoApplication
+            
             val cameraViewModel: CameraViewModel? = if (application != null) {
                 viewModel(factory = ViewModelFactory(application))
             } else {
                 null
             }
-            val analyzedBitmap by cameraViewModel?.analyzedBitmap?.collectAsState() 
+            
+            val homeViewModel: HomeViewModel? = if (application != null) {
+                viewModel(factory = ViewModelFactory(application))
+            } else {
+                null
+            }
+            
+            // Önce CameraViewModel'den, yoksa HomeViewModel'den al
+            val cameraBitmap by cameraViewModel?.analyzedBitmap?.collectAsState() 
                 ?: remember { mutableStateOf<Bitmap?>(null) }
-            val analysisResult by cameraViewModel?.analysisResult?.collectAsState()
+            val cameraResult by cameraViewModel?.analysisResult?.collectAsState()
                 ?: remember { mutableStateOf<com.disordo.ml.DyslexiaResult?>(null) }
+            
+            val homeBitmap by homeViewModel?.analyzedBitmap?.collectAsState() 
+                ?: remember { mutableStateOf<Bitmap?>(null) }
+            val homeResult by homeViewModel?.analysisResult?.collectAsState()
+                ?: remember { mutableStateOf<com.disordo.ml.DyslexiaResult?>(null) }
+            
+            // Hangi ViewModel'den veri geldiğini kontrol et
+            val analyzedBitmap = cameraBitmap ?: homeBitmap
+            val analysisResult = cameraResult ?: homeResult
             
             ResultsScreen(
                 riskScore = riskScore,
@@ -77,6 +100,7 @@ fun AppNavigation(navController: NavHostController, paddingValues: PaddingValues
                 detections = analysisResult?.detections ?: emptyList(),
                 onBackToHome = {
                     cameraViewModel?.clearAnalysisResult()
+                    homeViewModel?.clearAnalysisResult()
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }

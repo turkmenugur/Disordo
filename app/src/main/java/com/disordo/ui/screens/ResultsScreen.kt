@@ -89,7 +89,7 @@ fun ResultsScreen(
                 brush = Brush.verticalGradient(
                     colors = listOf(
                         disordo_cream,
-                        disordo_peach.copy(alpha = 0.2f)
+                        disordo_peach
                     )
                 )
             )
@@ -210,8 +210,8 @@ fun LoadingCard() {
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            disordo_mint.copy(alpha = 0.7f),
-                            disordo_mint.copy(alpha = 0.4f)
+                            disordo_mint,
+                            disordo_mint
                         )
                     )
                 )
@@ -223,7 +223,7 @@ fun LoadingCard() {
                     modifier = Modifier
                         .size(100.dp)
                         .scale(scale.value)
-                        .background(Color.White.copy(alpha = 0.4f), CircleShape),
+                        .background(Color.White, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(
@@ -243,7 +243,7 @@ fun LoadingCard() {
                 Text(
                     text = "Yapay zeka çalışıyor...",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.9f)
+                    color = Color.White
                 )
             }
         }
@@ -279,7 +279,7 @@ fun MegaHeroCard(riskScore: Float) {
                 .size(150.dp)
                 .offset(x = 220.dp, y = 30.dp)
                 .rotate(rotation.value)
-                .background(disordo_peach.copy(alpha = 0.3f), RoundedCornerShape(40.dp))
+                .background(disordo_peach, RoundedCornerShape(40.dp))
         )
 
         Card(
@@ -494,14 +494,14 @@ fun ColorfulStatsRow(riskScore: Float) {
             icon = Icons.Default.TrendingUp,
             value = "${(riskScore * 100).toInt()}",
             label = "Risk\nSkoru",
-            gradient = listOf(disordo_coral, disordo_coral.copy(alpha = 0.7f)),
+            gradient = listOf(disordo_coral, disordo_coral),
             modifier = Modifier.weight(1f)
         )
         FunStatCard(
             icon = Icons.Default.Shield,
             value = "${((1f - riskScore) * 100).toInt()}%",
             label = "Güven\nSeviyesi",
-            gradient = listOf(disordo_mint, disordo_mint.copy(alpha = 0.7f)),
+            gradient = listOf(disordo_mint, disordo_mint),
             modifier = Modifier.weight(1f)
         )
     }
@@ -789,7 +789,7 @@ fun CuteInfoCard() {
     Card(
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         colors = CardDefaults.cardColors(
-            containerColor = disordo_mint.copy(alpha = 0.3f)
+            containerColor = disordo_mint
         ),
         shape = RoundedCornerShape(28.dp),
         modifier = Modifier
@@ -810,7 +810,7 @@ fun CuteInfoCard() {
             Text(
                 text = "Bu analiz yapay zeka destekli bir ön değerlendirmedir. Kesin teşhis için mutlaka uzman görüşü alınmalıdır.",
                 style = MaterialTheme.typography.bodyLarge,
-                color = disordo_brown.copy(alpha = 0.85f),
+                color = disordo_brown,
                 lineHeight = 22.sp,
                 fontSize = 14.sp
             )

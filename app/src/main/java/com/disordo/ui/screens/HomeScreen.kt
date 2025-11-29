@@ -42,7 +42,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun HomeScreen(
     onNavigateToCamera: () -> Unit = {},
-    onNavigateToGallery: () -> Unit = {}
+    onNavigateToGallery: () -> Unit = {},
+    onNavigateToResults: (Float, android.graphics.Bitmap?, List<com.disordo.ml.DetectionResult>) -> Unit = { _, _, _ -> }
 ) {
     var showDeleteDialog by remember { mutableStateOf<UploadedImage?>(null) }
     val alpha = remember { Animatable(0f) }
@@ -58,6 +59,7 @@ fun HomeScreen(
     
     val images = homeViewModel?.images?.collectAsState()?.value ?: emptyList()
     val analysisResult = homeViewModel?.analysisResult?.collectAsState()?.value
+    val analyzedBitmap = homeViewModel?.analyzedBitmap?.collectAsState()?.value
     val isAnalyzing = homeViewModel?.isAnalyzing?.collectAsState()?.value ?: false
     
     // Galeri picker launcher
@@ -159,16 +161,33 @@ fun HomeScreen(
                 }
             )
             
-            // Analiz sonucu gösterimi
+            // Analiz sonucu gösterimi (sadece loading göster, sonuç ResultsScreen'de)
             if (isAnalyzing) {
                 AnalyzingCard()
             }
             
-            analysisResult?.let { result ->
-                AnalysisResultCard(
-                    result = result,
-                    onDismiss = { homeViewModel?.clearAnalysisResult() }
-                )
+            // Analiz tamamlandığında ResultsScreen'e yönlendir
+            var hasNavigated by remember { mutableStateOf(false) }
+            LaunchedEffect(analysisResult, analyzedBitmap) {
+                if (!hasNavigated) {
+                    analysisResult?.let { result ->
+                        analyzedBitmap?.let { bitmap ->
+                            if (result.errorMessage == null) {
+                                // Analiz başarılı, ResultsScreen'e git
+                                hasNavigated = true
+                                onNavigateToResults(result.riskScore, bitmap, result.detections)
+                                // clearAnalysisResult ResultsScreen'den geri dönüldüğünde çağrılacak
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Analiz sonucu temizlendiğinde flag'i sıfırla
+            LaunchedEffect(analysisResult) {
+                if (analysisResult == null) {
+                    hasNavigated = false
+                }
             }
 
             // Progress kartı
@@ -339,7 +358,7 @@ fun ActionButtons(
         BigActionButton(
             icon = Icons.Default.PhotoLibrary,
             text = "Galeriden\nSeç",
-            gradient = listOf(disordo_mint, disordo_mint.copy(alpha = 0.7f)),
+            gradient = listOf(disordo_mint, disordo_mint),
             modifier = Modifier.weight(1f),
             onClick = onNavigateToGallery
         )
