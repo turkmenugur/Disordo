@@ -1,1 +1,4 @@
 The training and development processes for the machine learning models used by this mobile application are detailed in the **[Disordo Model Training Repository Uygulama Projesi](https://github.com/ozeraysenur/Disordo-model-training)**
+
+Contributors:
+
